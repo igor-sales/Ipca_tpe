@@ -1,0 +1,187 @@
+---
+title: "Trabalho TPE II"
+output: html_document
+---
+
+Pacotes
+```{r, eval=FALSE, echo=FALSE, include=FALSE}
+#########pacotes
+# install.packages("tseries")
+# install.packages("urca")
+# install.packages("forescat")
+# install.packages("rugarch")
+# install.packages("forecast")
+# install.packages("TSA")
+# install.packages("seas")
+#install.packages("seasonal")
+#install.packages("seasonalview")
+
+```
+
+
+
+```{r, message=FALSE, warning=FALSE, comment=FALSE}
+library(tseries)
+library(urca)
+library(tseries)
+library(rugarch)
+library(TSA)
+library(forecast)
+library(seas)
+```
+
+Fazendo a Leitura da Base de Dados
+
+```{r}
+base <- read.csv("ipca_modelo.csv", sep = ";", stringsAsFactors = F)
+base <- subset(base, base$Ano >= 2000)
+base$NO.MES <- as.numeric(base$NO.MES)
+ipca <- ts(base[, 4], start = c(2000, 1), frequency = 12)
+
+```
+Decomposição da Série
+```{r}
+x <- decompose(ipca)
+plot(x)
+
+```
+
+Teste de Dickey & Fuller sem intercepto e sem tendência. 
+
+Rejeitamos a hipóstese nula de existência de raiz únitaria, logo temos evidências  de que a série é estacionária para esse caso. 
+```{r}
+modelo <-
+  ur.df(ipca, type = "none", selectlags = "AIC")#Teste sem intercepto e sem tendência
+
+summary(modelo)
+
+```
+
+Teste de Dick-Fuller com intercepto e sem tendência. 
+
+Rejeitamos a hipóstese nula de existência de raiz únitaria, logo temos evidências  de que a série é estacionária para esse caso. Vale ressaltar que o intercepto é estaticamente significante com um valor bem afastado de zero.
+```{r}
+modelo2 <-
+  ur.df(ipca, type = "drift", selectlags = "AIC") #Teste com intercepto e sem tendência
+summary(modelo2)
+```
+
+Teste de Dick-Fuller com intercepto e com tendência.
+
+Rejeitamos a hipóstese nula de existência de raiz únitaria, logo temos evidências  de que a série é estacionária para esse caso. Vale ressaltar que o tendência não é estaticamente significante.
+
+```{r}
+modelo3 <-
+  ur.df(ipca, type = "trend", selectlags = "AIC") #Teste com intercepto e com tendencia
+summary(modelo3)
+```
+
+
+Vimos que os dados não precisam ser diferenciados, pois temos evidências para dizer que a série, se encontra na forma estacionária.Logo, vamos determinar a ordem do modelo ARIMA, gerando os gráficos da FAC e FACP.
+
+Observa-se:
+A FAC apresentou um decaimento das autocorrelações típicas de séries estacionárias. observa após o log 1 um decaimento rápido. Evidenciando  alguns modelos como: modelo AR(1) e ARMA(1,0).
+
+```{r}
+par(mfrow = c(1, 2))
+acf(ipca)
+pacf(ipca)
+```
+
+
+Vamos verificar qual o melhor modelo usando os critérios de informação BIC e AIC.
+Nesse primeira caso vamos utilizar o modelo de 1° ordem ou seja sem diferença.
+```{r}
+##### Verificando qual o melhor medolo arima ####
+modd <- mat.or.vec(9, 3)
+k <- 1
+for (i in 0:2) {
+  for (j in 0:2) {
+    modelo_arima <-
+      arima(
+        ipca,
+        order = c(i, 0, j),
+        include.mean = TRUE,
+        method = "ML"
+      )
+    modd[k, 1] <- paste(i, 0, j)
+    modd[k, 2] <- AIC(modelo_arima)
+    modd[k, 3] <- BIC(modelo_arima)
+    k <- k + 1
+  }
+}
+colnames(modd) <- c("Modelo Arima", "AIC", "BIC")
+modd
+```
+
+Vamos verificar qual o melhor modelo usando os critérios de informação BIC e AIC.
+Nesse segundo caso utilizareos o modelo de 2° ordem ou seja com 1 diferença.
+```{r}
+modd <- mat.or.vec(9, 3)
+k <- 1
+for (j in 0:2) {
+  for(m in 0:2){
+    modelo_arima <-
+      arima(
+        ipca,
+          order = c(i, 1, j),
+          include.mean = TRUE,
+          method = "ML")
+      modd[k, 1] <- paste(i, 1, j)
+      modd[k, 2] <- AIC(modelo_arima)
+      modd[k, 3] <- BIC(modelo_arima)
+      k <- k + 1
+    }
+  }
+colnames(modd) <- c("Modelo Arima", "AIC", "BIC")
+modd
+```
+Dentre todos os modelos, o modelo escolhido foi o modelo arima(1,0,0) segundo o critério de AIC e BIC de primeira ordem, onde apresentou-se menores valores de AIC e BIC comparado ao modelo de 2° ordem. 
+
+
+Modelo escolhido
+```{r}
+  modelo_arima_esc <- arima(ipca, order = c(1, 0, 0))
+```
+
+Teste  Ljung-Box
+
+Não rejeitamos a hipótese nula. Logo tesmos evidências de que os resíduos são não-autocorrelacionados
+```{r}
+Box.test(modelo_arima_esc$residuals, lag = 10, type = "Ljung-Box")
+```
+QQplot
+Não podemos tirar grandes conclusões sobre o qqplot. Não há grandes discrepâncias aparentes, com Exceção das caudas .
+
+```{r}
+qqnorm(modelo_arima_esc$residuals)
+qqline(modelo_arima$residuals, col = "red")
+```
+
+Teste de normalidade de Jarque-Bera
+
+O teste rejeita a hipótese nula de que os dados são normais logo não tem assimetria e curtose similares.
+
+```{r}
+jarque.bera.test(modelo_arima_esc$residuals)
+```
+
+Previsão
+
+Vamos agora fazer a previsão 2 passos a frase. Estimando dados para novembro e dezembro de 2018.
+```{r}
+previsao <- forecast(ipca, modelo_arima_esc$coef, h = 2)
+previsao
+```
+
+Estimação pontual para meses de novembro e dezembro de 2018 com duas casas decimais.
+
+```{r}
+round(previsao$mean, 2)
+```
+
+Gráfico da Previsão 2 passos a frente 
+```{r}
+plot(previsao)
+```
+
